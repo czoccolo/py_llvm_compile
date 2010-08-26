@@ -1,9 +1,6 @@
 from llvm_w import *
 from ast import *
 
-class AnyType(Type):
-    pass
-
 class ast2llvm_type_visitor(type_visitor):
     def integer(self,bits): return Type.int(bits)
     def real(self,bits):
@@ -22,9 +19,9 @@ def type_1_op(op,llvm_t):
     return llvm_t
 
 def type_2_op(op,llvm_t1,llvm_t2):
-    if isinstance(llvm_t1,AnyType):
+    if llvm_t1==None:
         return llvm_t2
-    if isinstance(llvm_t2,AnyType):
+    if llvm_t2==None:
         return llvm_t1
     if op in ('eq','ge','gt','le','lt','ne'):
         return Type.int(1)
@@ -62,13 +59,17 @@ class type_deduction_visitor(visitor):
     def visitFunc(self,name,vars,types,expr):
         return self.visitLambda(vars,types,expr)
     def visitFix(self,varName,expr):
-        return expr._accept(self.new_scope([(varName,AnyType())]))
-    def visitLambda(self,vars,types,expr):
+        ns = self.new_scope([(varName,None)])
+        return expr._accept(ns)
+    def visitLambda(self,vars,types,expr,fixVarName=None):
         ty=[ast2llvm_type(t) for t in types]
         nv=self.new_scope(zip((v.name() for v in vars),ty))
         return Type.pointer(Type.function(expr._accept(nv),ty))
     def visitCall(self,fun,args):
-        return llvm_type_apply(fun._accept(self),*(i._accept(self) for i in args))
+        ty=fun._accept(self)
+        if ty==None:
+            return ty
+        return llvm_type_apply(ty,*(i._accept(self) for i in args))
 
 def _ra(f): lambda x,y,*o:f(y,x,*o)
 def _ni(*o): raise NotImplementedError()
@@ -76,8 +77,12 @@ def _ni(*o): raise NotImplementedError()
 def _llvm_compile(name,expr,type_v,args,types,
                   rt=None,
                   fixVarName=None,
-                  internal=False):
-    if rt==None: rt=expr._accept(type_v)
+                  internal=False,
+                  parent=None):
+    if fixVarName!=None:
+        type_v = type_v.new_scope([(fixVarName,None)])
+    if rt==None:
+        rt=expr._accept(type_v)
     fsig=Type.function(rt,types)
     my_fun=llvm_function(fsig,name,str(expr)+' '+str(args)+':'+str([str(t) for t in types]), internal)
     if(my_fun.basic_block_count!=0):
@@ -85,19 +90,24 @@ def _llvm_compile(name,expr,type_v,args,types,
     for (i,n) in enumerate(args):
         my_fun.args[i]=n
     bb=my_fun.append_basic_block('entry')
-    builder = enhanced_builder.new(bb)
-    cv=compile_visitor(my_fun,args,type_v,builder)
-    if fixVarName!=None: cv.vars[fixVarName]=my_fun
+    builder=enhanced_builder.new(bb)
+    inh_vars=None
+    if isinstance(parent,compile_visitor):
+        inh_vars=parent.vars
+    cv=compile_visitor(my_fun,args,type_v,builder,inherited_vars=inh_vars)
+    if fixVarName!=None:
+        cv.type_v.vars[fixVarName]=Type.pointer(fsig)
+        cv.vars[fixVarName]=my_fun
     res=expr._accept(cv)
     builder.ret(res)
     llvm_opt_function(my_fun)
     return my_fun
 
 class compile_visitor(visitor):
-    def __init__(self,fun,arg_order,type_v,builder):
+    def __init__(self,fun,arg_order,type_v,builder,inherited_vars=None):
         self.fun=fun
-        self.vars=dict( ((n,fun.args[i]) for (i,n) in enumerate(arg_order)) )
-
+        self.vars=dict() if inherited_vars==None else inherited_vars.copy()
+        self.vars.update( ((n,fun.args[i]) for (i,n) in enumerate(arg_order)) )
         self.type_v=type_v
         self.builder=builder
         self.unops={'abs':builder.abs,
@@ -195,18 +205,8 @@ class compile_visitor(visitor):
         ph.add_incoming(r_,else_br)
         return ph
 
-    def visitFix(self,varName,exprs):
-        if not isinstance(exprs,lamb):
-            raise NotImplementedError()
-        (vt,expr)=expr.lamb_int()
-        vars=[v.name() for (v,t) in vt]
-        ty=[ast2llvm_type(t) for (v,t) in vt]
-        nv=self.type_v.new_scope(zip(vars,ty))
-        nv.vars[varName]=AnyType()
-        rt=expr._accept(nv)
-        nv.vars[varName]=rt
-        if rt!=expr._accept(nv): raise AssertionError('type did not converge in 1 step')
-        return _llvm_compile('fix_lambda_$', expr, nv, vars, ty, rt, varName, internal=True)
+    def visitFix(self,varName,expr):
+        return expr._accept(self,fixVarName=varName)
 
     def visitExtern(self,name,rt,types):
         ty=[ast2llvm_type(t) for t in types]
@@ -216,13 +216,15 @@ class compile_visitor(visitor):
     def visitFunc(self,name,vars,types,expr):
         ty=[ast2llvm_type(t) for t in types]
         vars=[n.name() for n in vars]
-        return _llvm_compile(name,expr,self.type_v.new_scope(zip(vars,ty)),vars,ty,None,name)
+        return _llvm_compile(name,expr,self.type_v.new_scope(zip(vars,ty)),vars,ty,
+                             fixVarName=name)
         
-    def visitLambda(self,vars,types,expr):
+    def visitLambda(self,vars,types,expr,fixVarName=None):
         name='lambda_$'
         ty=[ast2llvm_type(t) for t in types]
         vars=[n.name() for n in vars]
-        return _llvm_compile(name,expr,self.type_v.new_scope(zip(vars,ty)),vars,ty, internal=True)
+        return _llvm_compile(name,expr,self.type_v.new_scope(zip(vars,ty)),vars,ty,
+                             fixVarName=fixVarName, internal=True, parent=self)
 
     def visitCall(self,fun,args):
         llvm_fun=fun._accept(self)
@@ -266,7 +268,6 @@ def _test0_1():
 
 def _test1():
     x=variable('x')
-    y=variable('y')
     f=variable('f')
     fact=extern('fact',int32_t,[int32_t])
     print fact
@@ -275,6 +276,24 @@ def _test1():
     compiled=llvm_compile(fact(10),{})
     llvm_dump_module()
     print compiled()
+
+def _test1_1():
+    x=variable('x')
+    f=variable('f')
+    fact=fix(f,lamb([x],[int32_t],condition(x>0,x*f(x-1),1)))
+    print fact
+    compiled=llvm_compile(fact(10),{})
+    llvm_dump_module()
+    print compiled()
+
+def _test1_2():
+    x=variable('x')
+    f=variable('f')
+    fact=fix(f,lamb([x],[int32_t],condition(x>0,x*f(x-1),1)))
+    print fact
+    compiled=llvm_compile_ordered(fact(x),[('x',int32_t)])
+    llvm_dump_module()
+    print compiled(10)
 
 def _test2():
     x=variable('x')
@@ -381,6 +400,7 @@ def _test7():
     return z(0.,1,v0[0],v0[1],1,v1[0],v1[1])
     
 def _test():
-    for i in (_test0,_test0_1,_test1,_test2,_test2_1,_test3,_test4,_test4_1,_test5,_test5_1,_test6,_test7):
+    for i in (_test0,_test0_1,_test1,_test1_1,_test1_2,_test2,_test2_1,
+              _test3,_test4,_test4_1,_test5,_test5_1,_test6,_test7):
         print i
         i()

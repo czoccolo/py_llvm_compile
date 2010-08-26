@@ -130,8 +130,8 @@ class lamb(expression):
         self.__expr      = expr
     def __str__(self):
         return 'lamb('+str(self.__var_types)+','+str(self.__expr)+')'
-    def _accept(self,v):
-        return v.visitLambda(self.__vars,self.__types,self.__expr)
+    def _accept(self,v,fixVarName=None):
+        return v.visitLambda(self.__vars,self.__types,self.__expr,fixVarName=fixVarName)
     def lamb_int(self):
         return (self.__var_types,self.__expr)
 
