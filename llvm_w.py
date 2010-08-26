@@ -288,3 +288,12 @@ class llvm_compiled_fun(object):
     def __call__(self,**args):
         arg=[llvm_arg_value(t,args[v]) for (t,v) in self.arg_t]
         return python_value(self.return_t,llvm_run_function(self.llvm_fun,arg))
+
+class llvm_compiled_ordered_fun(object):
+    def __init__(self, llvm_fun, arg_t, return_t):
+        self.llvm_fun=llvm_fun
+        self.arg_t=arg_t
+        self.return_t=return_t
+    def __call__(self,*args):
+        arg=[llvm_arg_value(*t_v) for t_v in zip(self.arg_t,args)]
+        return python_value(self.return_t,llvm_run_function(self.llvm_fun,arg))

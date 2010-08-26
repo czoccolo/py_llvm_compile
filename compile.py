@@ -239,6 +239,15 @@ def llvm_compile(expr, var_types):
     my_fun=_llvm_compile(fun_name, expr, tv, arg_order, arg_pack_t, internal=True)
     return llvm_compiled_fun(my_fun, zip(arg_pack_t,arg_order), rt)
 
+def llvm_compile_ordered(expr, var_types):
+    arg_pack_t=[ast2llvm_type(t) for (n,t) in var_types]
+    arg_order=[n for (n,t) in var_types]
+    tv=type_deduction_visitor( dict( zip(arg_order,arg_pack_t) ) )
+    rt=expr._accept(tv)
+    fun_name='fun_$'
+    my_fun=_llvm_compile(fun_name, expr, tv, arg_order, arg_pack_t, internal=True)
+    return llvm_compiled_ordered_fun(my_fun, arg_pack_t, rt)
+
 def _test0():
     x=variable('x')
     e=condition(x,1+x,x**2)
@@ -247,6 +256,13 @@ def _test0():
     compiled=llvm_compile(e,v)
     llvm_dump_module()
     print compiled(x=2)
+
+def _test0_1():
+    x=variable('x')
+    e=condition(x,1+x,x**2)
+    compiled=llvm_compile_ordered(e,[('x',int32_t)])
+    llvm_dump_module()
+    print compiled(2)
 
 def _test1():
     x=variable('x')
@@ -269,6 +285,16 @@ def _test2():
     compiled=llvm_compile(cos(x)**2+sin(x)**2,{'x':double_t})
     llvm_dump_module()
     print compiled(x=0.5)
+
+def _test2_1():
+    x=variable('x')
+    y=variable('y')
+    f=variable('f')
+    cos=extern('cos',double_t,[double_t])
+    sin=extern('sin',double_t,[double_t])
+    compiled=llvm_compile_ordered(cos(x)**2+sin(x)**2,[('x',double_t)])
+    llvm_dump_module()
+    print compiled(0.5)
     
 def _test3():
     system=extern('system',int32_t,[cstring])
@@ -284,6 +310,13 @@ def _test4():
     llvm_dump_module()
     do_system(x='echo 1')
 
+def _test4_1():
+    system=extern('system',int32_t,[cstring])
+    x=variable('x')
+    do_system=llvm_compile_ordered(system(x),[('x',cstring)])
+    llvm_dump_module()
+    do_system('echo 1')
+
 def _test5():
     strchr=extern('strchr',cstring,[cstring,int32_t])
     x=variable('x')
@@ -291,6 +324,14 @@ def _test5():
     call=llvm_compile(strchr(x,y),{'x':cstring,'y':int32_t})
     llvm_dump_module()
     print call(x='echo 1',y=ord('1'))
+
+def _test5_1():
+    strchr=extern('strchr',cstring,[cstring,int32_t])
+    x=variable('x')
+    y=variable('y')
+    call=llvm_compile_ordered(strchr(x,y),[('x',cstring),('y',int32_t)])
+    llvm_dump_module()
+    print call('echo 1',ord('1'))
 
 def _test6():
     system=extern('system',int32_t,[cstring])
@@ -340,6 +381,6 @@ def _test7():
     return z(0.,1,v0[0],v0[1],1,v1[0],v1[1])
     
 def _test():
-    for i in (_test0,_test1,_test2,_test3,_test4,_test5,_test6):
+    for i in (_test0,_test0_1,_test1,_test2,_test2_1,_test3,_test4,_test4_1,_test5,_test5_1,_test6,_test7):
         print i
         i()
