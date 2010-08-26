@@ -7,9 +7,8 @@ from llvm.passes import *
 
 if not globals().has_key('__loaded'):
     __llvm_module=Module.new('llvm_module')
-    __mp = ModuleProvider.new(__llvm_module)
-    __fopt = FunctionPassManager.new(__mp)
-    __ee = ExecutionEngine.new(__mp)
+    __fopt = FunctionPassManager.new(__llvm_module)
+    __ee = ExecutionEngine.new(__llvm_module)
     __fopt.add(__ee.target_data)
 
     __constant_cache={}
