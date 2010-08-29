@@ -250,6 +250,12 @@ def llvm_compile_ordered(expr, var_types):
     my_fun=_llvm_compile(fun_name, expr, tv, arg_order, arg_pack_t, internal=True)
     return llvm_compiled_ordered_fun(my_fun, arg_pack_t, rt)
 
+def llvm_compile_closed(expr,name='fun_$'):
+    tv=type_deduction_visitor(dict())
+    rt=expr._accept(tv)
+    my_fun=_llvm_compile(name, expr, tv, [], [], internal=True)
+    return llvm_compiled_funptr(my_fun)
+
 def _test0():
     x=variable('x')
     e=condition(x,1+x,x**2)
@@ -275,6 +281,18 @@ def _test1():
     print fact
     compiled=llvm_compile(fact(10),{})
     llvm_dump_module()
+    print compiled()
+
+def _test1_0():
+    x=variable('x')
+    f=variable('f')
+    fact=extern('fact',int32_t,[int32_t])
+    print fact
+    fact=function('fact',[x],[int32_t],condition(x>0,x*fact(x-1),1))
+    print fact
+    compiled=llvm_compile_closed(fact(10),"z10")
+    llvm_dump_module()
+    print compiled
     print compiled()
 
 def _test1_1():
@@ -322,6 +340,13 @@ def _test3():
     llvm_dump_module()
     do_system()
 
+def _test3_0():
+    system=extern('system',int32_t,[cstring])
+    x=variable('x')
+    do_system=llvm_compile_closed(system('echo 1'),'invk_system')
+    llvm_dump_module()
+    do_system()
+
 def _test4():
     system=extern('system',int32_t,[cstring])
     x=variable('x')
@@ -359,6 +384,18 @@ def _test6():
     llvm_dump_module()
 
 def _test7():
+    one=function('one',
+                 [],
+                 [],
+                 box(1))
+    t=llvm_compile(one(),{})
+    print t() # generates code
+    t=llvm_compile(one,{})
+    z=t()
+    llvm_dump_module()
+    return z()
+
+def _test8():
     ssp=extern('sparse_scal_prod', double_t, [double_t,
                                               int32_t,pointer(int32_t),pointer(double_t),
                                               int32_t,pointer(int32_t),pointer(double_t)])
@@ -369,7 +406,7 @@ def _test7():
     n1=variable('n1')
     idx1=variable('idx1')
     val1=variable('val1')
-    print (n0>0) & (n1>0)
+    
     ssp=function('sparse_scal_prod',
                  [acc,
                   n0,idx0,val0,
@@ -391,6 +428,7 @@ def _test7():
                                           n1-1,idx1.displ(1),val1.displ(1))))
                                     ),
                            on_false=acc))
+
     z=llvm_compile(ssp,{})()
     llvm_dump_module()
     import ctypes
@@ -398,9 +436,63 @@ def _test7():
     v1=(ctypes.ARRAY(ctypes.c_int32,16)(),ctypes.ARRAY(ctypes.c_double,16)())
     print v0,v1
     return z(0.,1,v0[0],v0[1],1,v1[0],v1[1])
+
+def _test8_0():
+    ssp=extern('sparse_scal_prod', double_t, [double_t,
+                                              int32_t,pointer(int32_t),pointer(double_t),
+                                              int32_t,pointer(int32_t),pointer(double_t)])
+    acc=variable('acc')
+    n0=variable('n0')
+    idx0=variable('idx0')
+    val0=variable('val0')
+    n1=variable('n1')
+    idx1=variable('idx1')
+    val1=variable('val1')
     
+    ssp=function('sparse_scal_prod',
+                 [acc,
+                  n0,idx0,val0,
+                  n1,idx1,val1],
+                 [double_t,
+                  int32_t,pointer(int32_t),pointer(double_t),
+                  int32_t,pointer(int32_t),pointer(double_t)],
+                 condition((n0>0) & (n1>0),
+                           on_true=(condition
+                                    (idx0[0]<idx1[0],ssp(acc,
+                                                         n0-1,idx0.displ(1),val0.displ(1),
+                                                         n1,idx1,val1),
+                                     condition
+                                     (idx0[0]>idx1[0],ssp(acc,
+                                                          n0,idx0,val0,
+                                                          n1-1,idx1.displ(1),val1.displ(1)),
+                                      ssp(val0[0]*val1[0],
+                                          n0-1,idx0.displ(1),val0.displ(1),
+                                          n1-1,idx1.displ(1),val1.displ(1))))
+                                    ),
+                           on_false=acc))
+
+    t=llvm_compile_closed(ssp,"test")
+    z=t()
+    llvm_dump_module()
+
+    import ctypes
+    v0=[ctypes.ARRAY(ctypes.c_int32,16)(0,1),
+        ctypes.ARRAY(ctypes.c_double,16)(0.5,0.5)]
+    v1=[ctypes.ARRAY(ctypes.c_int32,16)(1,2),
+        ctypes.ARRAY(ctypes.c_double,16)(0.1,1.0)]
+
+    print z(0.,
+            2, ctypes.pointer(v0[0]),ctypes.pointer(v0[1]),
+            2, ctypes.pointer(v1[0]),ctypes.pointer(v1[1]))
+
 def _test():
-    for i in (_test0,_test0_1,_test1,_test1_1,_test1_2,_test2,_test2_1,
-              _test3,_test4,_test4_1,_test5,_test5_1,_test6,_test7):
+    for i in (_test0,_test0_1,
+              _test1,_test1_0,_test1_1,_test1_2,
+              _test2,_test2_1,
+              _test3,_test3_0,
+              _test4,_test4_1,
+              _test5,_test5_1,
+              _test6,_test7,
+              _test8,_test8_0):
         print i
         i()

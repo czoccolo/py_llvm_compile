@@ -154,6 +154,8 @@ def llvm_arg_value(llvm_t,py_v):
         return GenericValue.real(llvm_t,py_v)
     if(llvm_t==Type.pointer(Type.int(8))):
         return llvm_string_argument(llvm_t,py_v)
+    if(llvm_is_pointer(llvm_t)):
+        return GenericValue.pointer(llvm_t,py_v) #TODO: properly handle python iterables and ctypes here
     raise NotImplementedError()
 
 def llvm_rt_value(llvm_t,py_v):
@@ -165,6 +167,21 @@ def llvm_rt_value(llvm_t,py_v):
         return Constant.stringz(py_v)
     raise NotImplementedError()
 
+
+def llvm_funptr(llvm_t,ptr):
+    cproto=ctypes.CFUNCTYPE(ctypes_type(llvm_t.return_type),*(ctypes_type(t) for t in llvm_t.args))
+    retval=cproto(ptr)
+    if not llvm_is_pointer(llvm_t.return_type): return retval
+    try:
+        rt=llvm_type_fun(llvm_t.return_type)
+        def make_cast_retval(rt,retval):
+            def cast_retval(*args):
+                return llvm_funptr(rt,retval(*args))
+            return cast_retval
+        return make_cast_retval(rt,retval)
+    except:
+        return retval    
+
 def python_value(llvm_t,llvm_v):
     if(llvm_is_int(llvm_t)):
         return llvm_v.as_int_signed()
@@ -174,9 +191,7 @@ def python_value(llvm_t,llvm_v):
         p=llvm_v.as_pointer()
         return str(ctypes.string_at(llvm_v.as_pointer())) if p else None
     try:
-        ft=llvm_type_fun(llvm_t)
-        cproto=ctypes.CFUNCTYPE(ctypes_type(ft.return_type),*(ctypes_type(t) for t in ft.args))
-        return cproto(llvm_v.as_pointer())
+        return llvm_funptr(llvm_type_fun(llvm_t),llvm_v.as_pointer())
     except: pass
     raise NotImplementedError()
 
@@ -297,3 +312,6 @@ class llvm_compiled_ordered_fun(object):
     def __call__(self,*args):
         arg=[llvm_arg_value(*t_v) for t_v in zip(self.arg_t,args)]
         return python_value(self.return_t,llvm_run_function(self.llvm_fun,arg))
+
+def llvm_compiled_funptr(llvm_fun):
+    return llvm_funptr(llvm_type_fun(llvm_fun.type),__ee.get_pointer_to_function(llvm_fun))
