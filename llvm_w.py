@@ -1,3 +1,20 @@
+# Copyright (C) 2009 Corrado Zoccolo
+
+# This file is part of py_llvm_compile.
+
+# py_llvm_compile is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# py_llvm_compile is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with py_llvm_compile.  If not, see <http://www.gnu.org/licenses/>.
+
 import ctypes
 import llvm._core as _core  # C wrappers
 from llvm import *
@@ -16,12 +33,12 @@ if not globals().has_key('__loaded'):
     __ctypes_string_cache={}
 
     for i in (
-        PASS_SIMPLIFY_LIB_CALLS,
+        PASS_SIMPLIFY_LIBCALLS,
         PASS_REASSOCIATE,
         PASS_GVN,
-        PASS_CFG_SIMPLIFICATION,
-        PASS_TAIL_CALL_ELIMINATION,
-        PASS_INSTRUCTION_COMBINING,
+        PASS_SIMPLIFYCFG,
+        PASS_TAILCALLELIM,
+        PASS_INSTCOMBINE,
         ):
         __fopt.add(i)
     __fopt.initialize()
@@ -245,31 +262,55 @@ class enhanced_builder(Builder):
             return self.select(pos,llvm_t,neg_v,nm)
         raise NotImplementedError()
 
+    def add(self,llvm_v1,llvm_v2,nm):
+        ty=llvm_v1.type
+        if(llvm_is_int(ty)):
+            return super(enhanced_builder,self).add(llvm_v1,llvm_v2, nm)
+        if(llvm_is_number(ty)):
+            return self.fadd(llvm_v1,llvm_v2, nm)
+        raise NotImplementedError()
+
+    def sub(self,llvm_v1,llvm_v2,nm):
+        ty=llvm_v1.type
+        if(llvm_is_int(ty)):
+            return super(enhanced_builder,self).sub(llvm_v1,llvm_v2,nm)
+        if(llvm_is_number(ty)):
+            return self.fsub(llvm_v1,llvm_v2,nm)
+        raise NotImplementedError()
+
+    def mul(self,llvm_v1,llvm_v2,nm):
+        ty=llvm_v1.type
+        if(llvm_is_int(ty)):
+            return super(enhanced_builder,self).mul(llvm_v1,llvm_v2,nm)
+        if(llvm_is_number(ty)):
+            return self.fmul(llvm_v1,llvm_v2,nm)
+        raise NotImplementedError()
+
     def div(self,llvm_v1,llvm_v2,nm):
         ty=llvm_v1.type
         if(llvm_is_int(ty)):
-            return self.sdiv(llvm_v1,llvm_v2)
-        if(llvm_is_real(ty)):
-            return self.fdiv(llvm_v1,llvm_v2)
+            return self.sdiv(llvm_v1,llvm_v2,nm)
+        if(llvm_is_number(ty)):
+            return self.fdiv(llvm_v1,llvm_v2,nm)
         raise NotImplementedError()
 
     def mod(self,llvm_v1,llvm_v2,nm):
         ty=llvm_v1.type
         if(llvm_is_int(ty)):
-            return self.smod(llvm_v1,llvm_v2)
-        if(llvm_is_real(ty)):
-            return self.fmod(llvm_v1,llvm_v2)
+            return self.smod(llvm_v1,llvm_v2,nm)
+        if(llvm_is_number(ty)):
+            return self.fmod(llvm_v1,llvm_v2,nm)
         raise NotImplementedError()
     
     def divmod(self,llvm_v1,llvm_v2,nm):
         ty=llvm_v1.type
         if(llvm_is_int(ty)):
-            q=self.sdiv(llvm_v1,llvm_v2,'quot')
-            r=self.smod(llvm_v1,llvm_v2,'rem')
+            q=self.sdiv(llvm_v1,llvm_v2,nm+'.quot')
+            r=self.smod(llvm_v1,llvm_v2,nm+'.rem')
             return None
-        if(llvm_is_real(ty)):
-            q=self.fdiv(llvm_v1,llvm_v2,'quot')
-            r=self.fmod(llvm_v1,llvm_v2,'rem')
+        if(llvm_is_number(ty)):
+            q=self.fdiv(llvm_v1,llvm_v2,nm+'.quot')
+            r=self.fmod(llvm_v1,llvm_v2,nm+'.rem')
             return None
         raise NotImplementedError()
     
