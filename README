@@ -1,0 +1,9 @@
+py_llvm_compile is a small experiment to allow defining and invoking
+native functions in python.
+
+In order to use it, you should have a developer setup of LLVM
+(download sources for LLVM 3.1 from llvm.org, compile and install) and
+llvmpy (http://www.llvmpy.org/).
+
+This package currently has no documentation, but the few examples
+(provided as tests) in the code.
